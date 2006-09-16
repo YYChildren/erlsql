@@ -26,8 +26,7 @@
 %% - Easy dynamic generation of SQL queries from Erlang for application
 %%   developers.
 %% - Prevention of most, if not all, SQL injection attacks by
-%%   assuring that all strings on the right hand side of binary
-%%   expressions are properly escaped.
+%%   assuring that all string values are properly escaped.
 %% - Integration with higher level libraries such as ErlyDB
 %%   (http://code.google.com/p/erlydb).
 %%
