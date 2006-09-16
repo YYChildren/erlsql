@@ -12,7 +12,7 @@
 assert(Q, Str) ->
     io:format("~p ->~n", [Q]),
     Res = binary_to_list(iolist_to_binary(erlsql:sql(Q))),
-    io:format("  ~p~n  ~p~n~n", [Res, Str]),
+    io:format("  ~p~n~n", [Res]),
     Res = Str.
 
 test() ->
@@ -33,7 +33,7 @@ test() ->
 	  "UPDATE project SET foo=5,bar=6,baz=\'hello'"],
 	 
 	 [{update, project, [{started_on, {2000,21,3}}],
-	   {name,'like',"blob"}},
+	   {name,like,"blob"}},
 	  "UPDATE project SET started_on='2000213' "
 	  "WHERE (name LIKE \'blob\')"],
 	 
@@ -45,7 +45,7 @@ test() ->
 	 
 	 [{delete, developer,
 	   {'not',
-	    {{name,'like',"%Paul%"},'or',{name,'like',"%Gerber%"}}}},
+	    {{name,like,"%Paul%"},'or',{name,like,"%Gerber%"}}}},
 	  "DELETE FROM developer WHERE "
 	  "NOT ((name LIKE '%Paul%') OR (name LIKE '%Gerber%'))"],
 
