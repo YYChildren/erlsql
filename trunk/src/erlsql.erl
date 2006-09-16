@@ -304,6 +304,7 @@ expr({Expr1, Op, Expr2}) ->
     [$(, expr2(Expr1), 32, convert(Op1), 32, expr(Expr2), $)];
 expr({list, Vals}) ->
     [$(, make_list(Vals, fun encode/1), $)];
+expr('?') -> $?;
 expr(Val) -> encode(Val).
 
 subquery(Val, Op, Subquery) ->
