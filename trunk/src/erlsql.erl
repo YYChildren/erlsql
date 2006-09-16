@@ -269,6 +269,8 @@ expr({Table, Field}) when is_atom(Table), is_atom(Field) ->
     [convert(Table), $., convert(Field)];
 expr({Expr1, as, Alias}) when is_atom(Alias) ->
     [expr2(Expr1), <<" AS ">>, convert(Alias)];
+expr({call, FuncName, []}) ->
+    [convert(FuncName), <<"()">>];
 expr({call, FuncName, Param}) ->
     [convert(FuncName), $(, expr2(Param), $)];
 expr({Val, Op, {select, _} = Subquery}) ->
