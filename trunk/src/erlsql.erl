@@ -22,7 +22,7 @@
 %% it does not currently attempt to cover every feature and extension
 %% of the SQL language.
 %% 
-%% The benefits of ErlSQL are:
+%% ErlSQL's benefits are:
 %% - Easy dynamic generation of SQL queries from Erlang for application
 %%   developers.
 %% - Prevention of most, if not all, SQL injection attacks by
