@@ -12,7 +12,7 @@
 assert(Q, Str) ->
     io:format("~p ->~n", [Q]),
     Res = binary_to_list(iolist_to_binary(erlsql:sql(Q))),
-    io:format("  ~p~n~n", [Res]),
+    io:format("  ~p~n  ~p~n~n", [Str, Res]),
     Res = Str.
 
 test() ->
@@ -31,6 +31,11 @@ test() ->
 	 
 	 [{update, project, [{foo,5},{bar,6},{baz,"hello"}]},
 	  "UPDATE project SET foo=5,bar=6,baz=\'hello'"],
+
+	 [{update, project, [{foo, "quo\'ted"}, {baz, blub}],
+	   {where, {'not', {a,'=',5}}}},
+	  "UPDATE project SET foo='quo\\\'ted',baz='blub' "
+	   "WHERE NOT (a = 5)"],
 	 
 	 [{update, project, [{started_on, {2000,21,3}}],
 	   {name,like,"blob"}},
@@ -41,6 +46,9 @@ test() ->
 	  "DELETE FROM project"],
 	 
 	 [{delete, project, {a,'=',5}},
+	  "DELETE FROM project WHERE (a = 5)"],
+
+	 [{delete, {from, project}, {where, {a,'=',5}}},
 	  "DELETE FROM project WHERE (a = 5)"],
 	 
 	 [{delete, developer,
@@ -74,6 +82,9 @@ test() ->
 	 
 	 [{select, {call, count, name}, {from, developer}},
 	  "SELECT count(name) FROM developer"],
+
+	 [{select, {call, last_insert_id, []}},
+	  "SELECT last_insert_id()"],
 	 
 	 [{{select, name, {from, person}}, union,
 	   {select, name, {from, project}}},
@@ -120,7 +131,10 @@ test() ->
 	  "((SELECT DISTINCT name FROM gymnist) "
 	  "UNION (SELECT name FROM dancer"
 	  " WHERE ((name LIKE 'Mikhail%') OR (country = 'Russia'))) "
-	  "WHERE (name LIKE 'M%') ORDER BY name DESC LIMIT 5,10)"]
+	  "WHERE (name LIKE 'M%') ORDER BY name DESC LIMIT 5,10)"],
+	 
+	 [{select, '*', {from, developer}, {where, {name,'=','?'}}},
+	  "SELECT * FROM developer WHERE (name = ?)"]
 	],
 	     
     lists:foreach(
