@@ -80,10 +80,18 @@ sql({insert, Table, Fields, Values}) ->
     insert(Table, Fields, Values);
 sql({update, Table, Params}) ->
     update(Table, Params);
+sql({update, Table, Params, {where, Where}}) ->
+    update(Table, Params, Where);
 sql({update, Table, Params, Where}) ->
     update(Table, Params, Where);
+sql({delete, {from, Table}}) ->
+    delete(Table);
 sql({delete, Table}) ->
     delete(Table);
+sql({delete, {from, Table}, {where, Where}}) ->
+    delete(Table, Where);
+sql({delete, Table, {where, Where}}) ->
+    delete(Table, Where);
 sql({delete, Table, Where}) ->
     delete(Table, Where).
 
