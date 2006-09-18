@@ -39,7 +39,7 @@
 %% For license information see LICENSE.TXT
 
 -module(erlsql).
--author("Yariv Sadan (yarivvv@gmail.com)").
+-author("Yariv Sadan (yarivvv@gmail.com) (http://yarivsblog.com)").
 -export([sql/1, sql/2]).
 
 %% @doc Generate an iolist (a tree of strings and/or binaries)
@@ -102,7 +102,7 @@ sql({delete, Table, Where}) ->
 %% @spec sql(Esql::term(), true) -> binary()
 %% @spec sql(Esql::term(), false) -> iolist()
 sql(Esql, true) ->
-    iolist_to_binary(Esql);
+    iolist_to_binary(sql(Esql, false));
 sql(Esql, false) ->
     sql(Esql).
 
