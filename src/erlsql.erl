@@ -316,6 +316,7 @@ expr({Op, Exprs}) when is_list(Exprs) ->
 	      [expr(Expr), 32, op(Op), 32, Acc]
       end, [], lists:reverse(Exprs));
 expr('?') -> $?;
+expr(Val) when is_atom(Val) -> convert(Val);
 expr(Val) -> encode(Val).
 
 op(Op) -> convert(op1(Op)).

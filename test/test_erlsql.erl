@@ -137,7 +137,15 @@ test() ->
 	  "SELECT * FROM developer WHERE (name = ?)"],
 
 	 [{select, '*', {from, foo}, {where, {a,'=',{'+', [1,2,3]}}}},
-	  "SELECT * FROM foo WHERE (a = 1 + 2 + 3)"]
+	  "SELECT * FROM foo WHERE (a = 1 + 2 + 3)"],
+
+	 [{select, '*', {from, foo},
+	   {where, {'=', [{'+',[a,b,c]}, {'+', [d,e,f]}]}}},
+	  "SELECT * FROM foo WHERE a + b + c = d + e + f"],
+	 
+	 [{select, '*', {from, foo},
+	   {where, {'and', [{a,'=',b}, {c,'=',d}, {e,'=',f}]}}},
+	  "SELECT * FROM foo WHERE (a = b) AND (c = d) AND (e = f)"]
 	],
 	     
     lists:foreach(
