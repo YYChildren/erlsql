@@ -273,6 +273,8 @@ where(WhereExpr) ->
 
 expr({Not, Expr}) when Not == 'not'; Not == '!' ->
     [<<"NOT ">>, expr(Expr)];
+expr({parens, Expr}) ->
+    [$(, expr(Expr), $)];
 expr({Table, Field}) when is_atom(Table), is_atom(Field) ->
     [convert(Table), $., convert(Field)];
 expr({Expr1, as, Alias}) when is_atom(Alias) ->
