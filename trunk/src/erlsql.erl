@@ -305,17 +305,25 @@ expr({Val, Op, Values}) when (Op == in orelse
 			     is_list(Values) ->
     [expr2(Val), subquery_op(Op), make_list(Values, fun encode/1), $)];
 expr({Expr1, Op, Expr2}) ->
-    Op1 = case Op of
-	      'and' -> 'AND';
-	      'or' -> 'OR';
-	      like -> 'LIKE';
-	      Other -> Other
-	  end,
-    [$(, expr2(Expr1), 32, convert(Op1), 32, expr(Expr2), $)];
+    [$(, expr2(Expr1), 32, op(Op), 32, expr(Expr2), $)];
 expr({list, Vals}) ->
     [$(, make_list(Vals, fun encode/1), $)];
+expr({Op, Exprs}) when is_list(Exprs) ->
+    lists:foldl(
+      fun(Expr, []) ->
+	      expr(Expr);
+	 (Expr, Acc) ->
+	      [expr(Expr), 32, op(Op), 32, Acc]
+      end, [], lists:reverse(Exprs));
 expr('?') -> $?;
 expr(Val) -> encode(Val).
+
+op(Op) -> convert(op1(Op)).
+op1('and') -> 'AND';
+op1('or') -> 'OR';
+op1(like) -> 'LIKE';
+op1(Op) -> Op.
+
 
 subquery(Val, Op, Subquery) ->
     [expr2(Val), subquery_op(Op), sql(Subquery), $)].

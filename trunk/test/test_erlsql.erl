@@ -134,7 +134,10 @@ test() ->
 	  "WHERE (name LIKE 'M%') ORDER BY name DESC LIMIT 5,10)"],
 	 
 	 [{select, '*', {from, developer}, {where, {name,'=','?'}}},
-	  "SELECT * FROM developer WHERE (name = ?)"]
+	  "SELECT * FROM developer WHERE (name = ?)"],
+
+	 [{select, '*', {from, foo}, {where, {a,'=',{'+', [1,2,3]}}}},
+	  "SELECT * FROM foo WHERE (a = 1 + 2 + 3)"]
 	],
 	     
     lists:foreach(
