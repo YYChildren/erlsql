@@ -54,6 +54,8 @@ sql({select, Fields, {from, Tables}}) ->
     select(Fields, Tables);
 sql({select, Fields, {from, Tables}, {where, WhereExpr}}) ->
     select(undefined, Fields, Tables, WhereExpr, undefined);
+sql({select, Fields, {from, Tables}, {where, WhereExpr}, Extras}) ->
+    select(undefined, Fields, Tables, WhereExpr, Extras);
 sql({select, Fields, {from, Tables}, Extras}) ->
     select(undefined, Fields, Tables, undefined, Extras);
 sql({select, Tables, {where, WhereExpr}}) ->
