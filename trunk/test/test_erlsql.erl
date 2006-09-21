@@ -10,10 +10,24 @@
 -export([assert/2, test/0]).
 
 assert(Q, Str) ->
+    assert(Q, Str, true).
+assert(Q, Str, true) ->
     io:format("~p ->~n", [Q]),
-    Res = binary_to_list(iolist_to_binary(erlsql:sql(Q))),
+    Res = binary_to_list(erlsql:sql(Q, true)),
     io:format("  ~p~n  ~p~n~n", [Str, Res]),
-    Res = Str.
+    Res = Str;
+assert(Q, Str, false) ->
+    io:format("~p ->~n", [Q]),
+    Res = binary_to_list(erlsql:unsafe_sql(Q,true)),
+    io:format("  ~p~n  ~p~n~n", [Str, Res]),
+    Res = Str,
+    
+    case catch erlsql:sql(Q) of
+	{'EXIT', _} ->
+	    ok;
+	Other ->
+	    throw({"statement passed illegally!!!", {Q, Other}})
+    end.
 
 test() ->
     Pairs =
@@ -153,4 +167,69 @@ test() ->
 	     
     lists:foreach(
       fun([Q, Str]) -> assert(Q, Str) end,
-      Pairs).
+      Pairs),
+
+    %% WARNING: the following queries use verbatim WHERE and
+    %% other trailing clauses, which is VERY DANGEROUS because
+    %% it exposes you to SQL injection attacks.
+    %%
+    %% TRY TO AVOID WRITING SUCH QUERIES WHENEVER POSSIBLE
+
+    UnsafeQueries =
+	[
+	 [{select, '*', {from, foo}, "WHERE a=b"},
+	  "SELECT * FROM foo WHERE a=b"],
+
+	 [{select, '*', {from, foo}, "WHERE a='foo'"},
+	  "SELECT * FROM foo WHERE a='foo'"],
+
+	 [{select, '*', {from, foo}, <<"WHERE a='i'm an evil query'">>},
+	  "SELECT * FROM foo WHERE a='i'm an evil query'"],
+
+	 [{select, '*', {from, foo}, <<"WHERE a=b">>},
+	  "SELECT * FROM foo WHERE a=b"],
+
+	 [{select, '*', {from, foo}, {where, "a=b"}},
+	  "SELECT * FROM foo WHERE a=b"],
+
+	 [{select, '*', {from, foo}, {where, <<"a=b">>}},
+	  "SELECT * FROM foo WHERE a=b"],
+
+	 [{select, '*', {from, foo},
+	   {where, {a, in,
+		    {select, '*', {from, bar}, {where, "a=b"}}}}},
+	  "SELECT * FROM foo WHERE a IN (SELECT * FROM bar WHERE a=b)"],
+
+	 [{select, '*', {from, foo},
+	   {where, {a, in,
+		    {select, '*', {from, bar}, {where, <<"a=b">>}}}}},
+	  "SELECT * FROM foo WHERE a IN (SELECT * FROM bar WHERE a=b)"],
+
+	 [{select, '*', {from, foo},
+	   {where, {a, in,
+		    {select, '*', {from, bar}, <<"WHERE a=b">>}}}},
+	  "SELECT * FROM foo WHERE a IN (SELECT * FROM bar WHERE a=b)"],
+	 
+	 [{select, '*', {from, foo}, {where, <<"a=b">>}, <<"LIMIT 5">>},
+	  "SELECT * FROM foo WHERE a=b LIMIT 5"],
+
+	 [{{select, '*', {from, foo}, {where, <<"a=b">>}},
+	   union,
+	   {select, '*', {from, bar}}},
+	  "(SELECT * FROM foo WHERE a=b) UNION (SELECT * FROM bar)"],
+
+	 [{{select, '*', {from, foo}},
+	   union,
+	   {select, '*', {from, bar}, {where, <<"a=b">>}}},
+	  "(SELECT * FROM foo) UNION (SELECT * FROM bar WHERE a=b)"],
+
+	 [{{select, '*', {from, foo}},
+	    union,
+	    {select, '*', {from, bar}},
+	    {where, "a=b"}},
+	   "(SELECT * FROM foo) UNION (SELECT * FROM bar) WHERE a=b"]
+	 ],
+
+    lists:foreach(
+      fun([Q, Str]) -> assert(Q, Str, false) end,
+      UnsafeQueries).
