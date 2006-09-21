@@ -30,6 +30,10 @@
 %% - Integration with higher level libraries such as ErlyDB
 %%   (http://code.google.com/p/erlydb).
 %%
+%% WARNING: ErlSQL allows you to write verbatim WHERE clauses as well as
+%% verbatim LIMIT and other trailing clauses, but using this feature
+%% is highly discouraged because it exposes you to SQL injection attacks.
+%%
 %% For usage examples, look at the file test_erlsql.erl under the test/
 %% directory.
 %%   
@@ -40,62 +44,25 @@
 
 -module(erlsql).
 -author("Yariv Sadan (yarivvv@gmail.com) (http://yarivsblog.com)").
--export([sql/1, sql/2]).
+-export([sql/1,
+	 sql/2,
+	 unsafe_sql/1,
+	 unsafe_sql/2,
+	 encode/1]).
+
+-define(L(Obj), io:format("LOG ~w ~p\n", [?LINE, Obj])).
 
 %% @doc Generate an iolist (a tree of strings and/or binaries)
 %%  for a literal SQL statement that corresponds to the ESQL
 %%  structure. If the structure is invalid, this function would
 %%  crash.
+%%  This function does not allow writing literal WHERE, LIMIT
+%%  and other trailing clauses. To write such clauses,
+%%  call unsafe_sql/1 or unsafe_sql/2.
 %%
-%% @spec sql(ESQL::term()) -> iolist()
-sql({select, Tables})->
-    select(Tables);
-sql({select, Fields, {from, Tables}}) ->
-    select(Fields, Tables);
-sql({select, Fields, {from, Tables}, {where, WhereExpr}}) ->
-    select(undefined, Fields, Tables, WhereExpr, undefined);
-sql({select, Fields, {from, Tables}, {where, WhereExpr}, Extras}) ->
-    select(undefined, Fields, Tables, WhereExpr, Extras);
-sql({select, Fields, {from, Tables}, Extras}) ->
-    select(undefined, Fields, Tables, undefined, Extras);
-sql({select, Tables, {where, WhereExpr}}) ->
-    select(undefined, undefined, Tables, WhereExpr);
-sql({select, Modifier, Fields, {from, Tables}}) ->
-    select(Modifier, Fields, Tables);
-sql({select, Modifier, Fields, {from, Tables}, {where, WhereExpr}}) ->
-    select(Modifier, Fields, Tables, WhereExpr);
-sql({select, Modifier, Fields, {from, Tables}, Extras}) ->
-    select(Modifier, Fields, Tables, undefined, Extras);
-sql({select, Modifier, Fields, {from, Tables}, {where, WhereExpr}, Extras}) ->
-    select(Modifier, Fields, Tables, WhereExpr, Extras);
-sql({Select1, union, Select2}) ->
-    [$(, sql(Select1), <<") UNION (">>, sql(Select2), $)];
-sql({Select1, union, Select2, {where, WhereExpr}}) ->
-    [sql({Select1, union, Select2}), where(WhereExpr)];
-sql({Select1, union, Select2, Extras}) ->
-    [sql({Select1, union, Select2}), extra_clause(Extras)];
-sql({Select1, union, Select2, {where, _} = Where, Extras}) ->
-    [sql({Select1, union, Select2, Where}), extra_clause(Extras)];
-sql({insert, Table, Params}) ->
-    insert(Table, Params);
-sql({insert, Table, Fields, Values}) ->
-    insert(Table, Fields, Values);
-sql({update, Table, Params}) ->
-    update(Table, Params);
-sql({update, Table, Params, {where, Where}}) ->
-    update(Table, Params, Where);
-sql({update, Table, Params, Where}) ->
-    update(Table, Params, Where);
-sql({delete, {from, Table}}) ->
-    delete(Table);
-sql({delete, Table}) ->
-    delete(Table);
-sql({delete, {from, Table}, {where, Where}}) ->
-    delete(Table, Where);
-sql({delete, Table, {where, Where}}) ->
-    delete(Table, Where);
-sql({delete, Table, Where}) ->
-    delete(Table, Where).
+%% @spec sql(Esql::term()) -> iolist()
+sql(Esql) ->
+    sql2(Esql, true).
 
 %% @doc Similar to sql/1, but accepts a boolean parameter
 %%   indicating if the return value should be a single binary
@@ -104,243 +71,40 @@ sql({delete, Table, Where}) ->
 %% @spec sql(Esql::term(), true) -> binary()
 %% @spec sql(Esql::term(), false) -> iolist()
 sql(Esql, true) ->
-    iolist_to_binary(sql(Esql, false));
+    iolist_to_binary(sql(Esql));
 sql(Esql, false) ->
     sql(Esql).
 
+%% @doc Generate an iolist (a tree of strings and/or binaries)
+%%  for a literal SQL statement that corresponds to the ESQL
+%%  structure. If the structure is invalid, this function would
+%%  crash.
+%%  This function allows writing literal WHERE, LIMIT
+%%  and other trailing clauses, such as {where, "a=" ++ Val},
+%%  or "WHERE a=" ++ Str ++ " LIMIT 5".
+%%  Such clauses are unsafe because they expose you to SQL
+%%  injection attacks. When you use unsafe_sql, make sure to
+%%  quote all your strings using the encode/1 function.
+%%
+%% @spec unsafe_sql(Esql::term()) -> iolist()
+unsafe_sql(Esql) ->
+    sql2(Esql, false).
 
-%% Internal functions
+%% @doc Similar to unsafe_sql/1, but accepts a boolean parameter
+%%  indicating if the return value should be a binary or an iolist.
+%%
+%% @spec unsafe_sql(Esql::term(), AsBinary::bool()) -> binary() | iolist()
+unsafe_sql(Esql, true) ->
+    iolist_to_binary(unsafe_sql(Esql));
+unsafe_sql(Esql, false) ->
+    unsafe_sql(Esql).
 
-select(Fields) ->
-    select(undefined, Fields, undefined, undefined, undefined).
-
-select(Fields, Tables) ->
-    select(undefined, Fields, Tables, undefined, undefined).
-
-select(Modifier, Fields, Tables) ->
-    select(Modifier, Fields, Tables, undefined, undefined).
-
-select(Modifier, Fields, Tables, WhereExpr) ->
-    select(Modifier, Fields, Tables, WhereExpr, undefined).
-
-select(Modifier, Fields, Tables, WhereExpr, Extras) ->
-    S1 = <<"SELECT ">>,
-    S2 = case Modifier of
-	     undefined ->
-		 S1;
-	     Modifier ->
-		 Modifier1 = case Modifier of
-				 distinct -> 'DISTINCT';
-				 'all' -> 'ALL';
-				 Other -> Other
-			     end,
-		 [S1, convert(Modifier1), 32]
-	 end,
-
-    S3 = [S2, make_list(Fields, fun expr2/1)],
-    S4 = case Tables of
-	     undefined ->
-		 S3;
-	     _Other ->
-		 [S3, <<" FROM ">>, make_list(Tables, fun expr2/1)]
-	 end,
-
-    S5 =
-	case where(WhereExpr) of
-	    undefined ->
-		S4;
-	    WhereClause ->
-		[S4, WhereClause]
-	end,
-    
-    case extra_clause(Extras) of  
-	undefined -> S5;
-	Expr -> [S5, Expr]
-    end.
-					    
-
-extra_clause(undefined) -> undefined;
-extra_clause(Exprs) when is_list(Exprs) ->
-    Res = lists:foldl(
-	    fun(Expr, Acc) ->
-		    [extra_clause(Expr) | Acc]
-	    end, [], Exprs),
-    [lists:reverse(Res)];
-extra_clause({limit, Num}) ->
-    [<<" LIMIT ">>, encode(Num)];
-extra_clause({limit, Offset, Num}) ->
-    [<<" LIMIT ">>, encode(Offset), $, , encode(Num)];
-extra_clause({group_by, ColNames}) ->
-    [<<" GROUP BY ">>, make_list(ColNames, fun convert/1)];
-extra_clause({group_by, ColNames, having, Expr}) ->
-    [extra_clause({group_by, ColNames}), <<" HAVING ">>, expr(Expr)];
-extra_clause({order_by, ColNames}) ->
-    [<<" ORDER BY ">>,
-     make_list(ColNames,
-		      fun({Name, Modifier}) when
-			 Modifier == 'asc' ->
-			      [convert(Name), 32, convert('ASC')];
-			 ({Name, Modifier}) when
-			 Modifier == 'desc' ->
-			      [convert(Name), 32, convert('DESC')];
-			 (Name) ->
-			      convert(Name)
-		      end)].
-				 
-    
-    
-insert(Table, Params) ->
-    Names = make_list(Params, fun({Name, _Value}) ->
-					     convert(Name)
-				     end),
-    Values = [$(, make_list(
-	       Params,
-	       fun({_Name, Value}) ->
-		       encode(Value)
-	       end),
-	      $)],
-    make_insert_query(Table, Names, Values).
-
-insert(Table, Fields, Records) ->
-    Names = make_list(Fields, fun convert/1),
-    Values =
-	make_list(
-	  Records,
-	  fun(Record) ->
-		  Record1 = if is_tuple(Record) ->
-				    tuple_to_list(Record);
-			       true -> Record
-			    end,
-		  [$(, make_list(Record1, fun encode/1), $)]
-	  end),    
-    make_insert_query(Table, Names, Values).
-
-make_insert_query(Table, Names, Values) ->
-    [<<"INSERT INTO ">>, convert(Table),
-     $(, Names, <<") VALUES ">>, Values].
-
-update(Table, Params) ->
-    update(Table, Params, undefined).
-
-update(Table, Params, WhereExpr) ->
-    S1 = [<<"UPDATE ">>, convert(Table), <<" SET ">>],
-    S2 = make_list(Params,
-			  fun({Field, Val}) ->
-				  [convert(Field), $=, encode(Val)]
-			  end),
-    
-
-    S3 = case where(WhereExpr) of
-	     undefined ->
-		 [S1, S2];
-	     WhereClause ->
-		 [S1, S2, WhereClause]
-	 end,
-    S3.
-
-delete(Table) ->
-    delete(Table, undefined).
-
-delete(Table, WhereExpr) ->
-    S1 = [<<"DELETE FROM ">>, convert(Table)],
-    case where(WhereExpr) of
-	undefined ->
-	    S1;
-	WhereClause ->
-	    [S1, WhereClause]
-    end.
-    
-
-convert(Val) when is_atom(Val)->
-    {_Stuff, Bin} = split_binary(term_to_binary(Val), 4),
-    Bin.
-
-make_list(Vals, ConvertFun) when is_list(Vals) ->
-    {Res, _} =
-        lists:foldl(
-          fun(Val, {Acc, false}) ->
-                  {[ConvertFun(Val) | Acc], true};
-	     (Val, {Acc, true}) ->
-                  {[ConvertFun(Val) , $, | Acc], true}
-          end, {[], false}, Vals),
-    lists:reverse(Res);
-make_list(Val, ConvertFun) ->
-    ConvertFun(Val).
-
-where(undefined) -> undefined;
-where(WhereExpr) ->
-    S1 = make_list(WhereExpr, fun expr/1),
-    [<<" WHERE ">>, S1].
-
-
-expr({Not, Expr}) when Not == 'not'; Not == '!' ->
-    [<<"NOT ">>, expr(Expr)];
-expr({parens, Expr}) ->
-    [$(, expr(Expr), $)];
-expr({Table, Field}) when is_atom(Table), is_atom(Field) ->
-    [convert(Table), $., convert(Field)];
-expr({Expr1, as, Alias}) when is_atom(Alias) ->
-    [expr2(Expr1), <<" AS ">>, convert(Alias)];
-expr({call, FuncName, []}) ->
-    [convert(FuncName), <<"()">>];
-expr({call, FuncName, Param}) ->
-    [convert(FuncName), $(, expr2(Param), $)];
-expr({Val, Op, {select, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {select, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {select, _, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {select, _, _, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {select, _, _, _, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {select, _, _, _, _, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {_, union, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {_, union, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, {_, union, _, _, _} = Subquery}) ->
-    subquery(Val, Op, Subquery);
-expr({Val, Op, Values}) when (Op == in orelse
-			      Op == any orelse
-			      Op == some) andalso
-			     is_list(Values) ->
-    [expr2(Val), subquery_op(Op), make_list(Values, fun encode/1), $)];
-expr({Expr1, Op, Expr2}) ->
-    [$(, expr2(Expr1), 32, op(Op), 32, expr(Expr2), $)];
-expr({list, Vals}) ->
-    [$(, make_list(Vals, fun encode/1), $)];
-expr({Op, Exprs}) when is_list(Exprs) ->
-    lists:foldl(
-      fun(Expr, []) ->
-	      expr(Expr);
-	 (Expr, Acc) ->
-	      [expr(Expr), 32, op(Op), 32, Acc]
-      end, [], lists:reverse(Exprs));
-expr('?') -> $?;
-expr(Val) when is_atom(Val) -> convert(Val);
-expr(Val) -> encode(Val).
-
-op(Op) -> convert(op1(Op)).
-op1('and') -> 'AND';
-op1('or') -> 'OR';
-op1(like) -> 'LIKE';
-op1(Op) -> Op.
-
-
-subquery(Val, Op, Subquery) ->
-    [expr2(Val), subquery_op(Op), sql(Subquery), $)].
-
-subquery_op(in) -> <<" IN (">>;
-subquery_op(any) -> <<" ANY (">>;
-subquery_op(some) -> <<" SOME (">>.
-
-expr2(Expr) when is_atom(Expr) -> convert(Expr);
-expr2(Expr) -> expr(Expr).
-    
-
+%% @doc Encode a value as a string or a binary to be embedded in
+%%  a SQL statement. This function can encode numbers, atoms,
+%%  date/time/datetime values, strings and binaries
+%%  (which it escapes automatically).
+%% 
+%% @spec encode(Val::term(), AsBinary::bool()) -> string() | binary()
 encode(Val) ->
     encode(Val, true).
 encode(Val, false) when Val == undefined; Val == null ->
@@ -378,6 +142,312 @@ encode({Time1, Time2, Time3}, false) ->
 encode(Val, _AsBinary) ->
     {error, {unrecognized_value, {Val}}}.
 
+sql2({select, Tables}, Safe)->
+    select(Tables, Safe);
+sql2({select, Fields, {from, Tables}}, Safe) ->
+    select(Fields, Tables, Safe);
+sql2({select, Fields, {from, Tables}, {where, WhereExpr}}, Safe) ->
+    select(undefined, Fields, Tables, WhereExpr, undefined, Safe);
+sql2({select, Fields, {from, Tables}, {where, WhereExpr}, Extras}, Safe) ->
+    select(undefined, Fields, Tables, WhereExpr, Extras, Safe);
+sql2({select, Fields, {from, Tables}, Extras}, Safe) ->
+    select(undefined, Fields, Tables, undefined, Extras, Safe);
+sql2({select, Tables, {where, WhereExpr}}, Safe) ->
+    select(undefined, undefined, Tables, WhereExpr, Safe);
+sql2({select, Tables, WhereExpr}, Safe) ->
+    select(undefined, undefined, Tables, WhereExpr, Safe);
+sql2({select, Modifier, Fields, {from, Tables}}, Safe) ->
+    select(Modifier, Fields, Tables, Safe);
+sql2({select, Modifier, Fields, {from, Tables}, {where, WhereExpr}}, Safe) ->
+    select(Modifier, Fields, Tables, WhereExpr, Safe);
+sql2({select, Modifier, Fields, {from, Tables}, Extras}, Safe) ->
+    select(Modifier, Fields, Tables, undefined, Extras, Safe);
+sql2({select, Modifier, Fields, {from, Tables}, {where, WhereExpr}, Extras},
+    Safe) ->
+    select(Modifier, Fields, Tables, WhereExpr, Extras, Safe);
+sql2({select, Modifier, Fields, {from, Tables}, WhereExpr, Extras}, Safe) ->
+    select(Modifier, Fields, Tables, WhereExpr, Extras, Safe);
+sql2({Select1, union, Select2}, Safe) ->
+    [$(, sql2(Select1, Safe), <<") UNION (">>, sql2(Select2, Safe), $)];
+sql2({Select1, union, Select2, {where, WhereExpr}}, Safe) ->
+    [sql2({Select1, union, Select2}, Safe), where(WhereExpr, Safe)];
+sql2({Select1, union, Select2, Extras}, Safe) ->
+    [sql2({Select1, union, Select2}, Safe), extra_clause(Extras, Safe)];
+sql2({Select1, union, Select2, {where, _} = Where, Extras}, Safe) ->
+    [sql2({Select1, union, Select2, Where}, Safe), extra_clause(Extras, Safe)];
+sql2({insert, Table, Params}, _Safe) ->
+    insert(Table, Params);
+sql2({insert, Table, Fields, Values}, _Safe) ->
+    insert(Table, Fields, Values);
+sql2({update, Table, Params}, Safe) ->
+    update(Table, Params, Safe);
+sql2({update, Table, Params, {where, Where}}, Safe) ->
+    update(Table, Params, Where, Safe);
+sql2({update, Table, Params, Where}, Safe) ->
+    update(Table, Params, Where, Safe);
+sql2({delete, {from, Table}}, Safe) ->
+    delete(Table, Safe);
+sql2({delete, Table}, Safe) ->
+    delete(Table, Safe);
+sql2({delete, {from, Table}, {where, Where}}, Safe) ->
+    delete(Table, Where, Safe);
+sql2({delete, Table, {where, Where}}, Safe) ->
+    delete(Table, Where, Safe);
+sql2({delete, Table, Where}, Safe) ->
+    delete(Table, Where, Safe).
+
+%% Internal functions
+
+select(Fields, Safe) ->
+    select(undefined, Fields, undefined, undefined, undefined, Safe).
+
+select(Fields, Tables, Safe) ->
+    select(undefined, Fields, Tables, undefined, undefined, Safe).
+
+select(Modifier, Fields, Tables, Safe) ->
+    select(Modifier, Fields, Tables, undefined, undefined, Safe).
+
+select(Modifier, Fields, Tables, WhereExpr, Safe) ->
+    select(Modifier, Fields, Tables, WhereExpr, undefined, Safe).
+
+select(Modifier, Fields, Tables, WhereExpr, Extras, Safe) ->
+    S1 = <<"SELECT ">>,
+    S2 = case Modifier of
+	     undefined ->
+		 S1;
+	     Modifier ->
+		 Modifier1 = case Modifier of
+				 distinct -> 'DISTINCT';
+				 'all' -> 'ALL';
+				 Other -> Other
+			     end,
+		 [S1, convert(Modifier1), 32]
+	 end,
+
+    ListFun = fun(Val) -> expr2(Val, Safe) end,
+    S3 = [S2, make_list(Fields, ListFun)],
+    S4 = case Tables of
+	     undefined ->
+		 S3;
+	     _Other ->
+		 [S3, <<" FROM ">>, make_list(Tables, ListFun)]
+	 end,
+
+    S5 = case where(WhereExpr, Safe) of
+	     undefined ->
+		 S4;
+	     WhereClause ->
+		 [S4, WhereClause]
+	 end,
+    
+    case extra_clause(Extras, Safe) of  
+	undefined -> S5;
+	Expr -> [S5, Expr]
+    end.
+					    
+where(undefined, _Safe) -> undefined;
+where(Expr, false) when is_binary(Expr) ->
+    Res = case Expr of	
+	      <<"WHERE ", _Rest/binary>> = Expr1 ->
+		  Expr1;
+	      <<"where ", Rest/binary>> ->
+		  <<"WHERE ", Rest/binary>>;
+	      Expr1 ->
+		  <<"WHERE ", Expr1/binary>>
+		      end,
+    [32, Res];
+where(Exprs, false) when is_list(Exprs)->
+    where(list_to_binary(Exprs), false);
+where(Expr, Safe) when is_tuple(Expr) ->
+    [<<" WHERE ">>, expr(Expr, Safe)].
+
+extra_clause(undefined, _Safe) -> undefined;
+extra_clause(Expr, false) when is_binary(Expr) -> [32, Expr];
+extra_clause([Expr], false) when is_binary(Expr) -> [32, Expr];
+extra_clause(Exprs, false) when is_list(Exprs) ->
+    case is_tuple(hd(Exprs)) of 
+	false ->
+	    [32, list_to_binary(Exprs)];
+	true ->
+	    extra_clause2(Exprs, false)
+    end;
+extra_clause(Exprs, true) when is_list(Exprs) ->
+    extra_clause2(Exprs, true);
+extra_clause({limit, Num}, _Safe) ->
+    [<<" LIMIT ">>, encode(Num)];
+extra_clause({limit, Offset, Num}, _Safe) ->
+    [<<" LIMIT ">>, encode(Offset), $, , encode(Num)];
+extra_clause({group_by, ColNames}, _Safe) ->
+    [<<" GROUP BY ">>, make_list(ColNames, fun convert/1)];
+extra_clause({group_by, ColNames, having, Expr}, Safe) ->
+    [extra_clause({group_by, ColNames}, Safe), <<" HAVING ">>,
+     expr(Expr, Safe)];
+extra_clause({order_by, ColNames}, _Safe) ->
+    [<<" ORDER BY ">>,
+     make_list(ColNames,
+		      fun({Name, Modifier}) when
+			 Modifier == 'asc' ->
+			      [convert(Name), 32, convert('ASC')];
+			 ({Name, Modifier}) when
+			 Modifier == 'desc' ->
+			      [convert(Name), 32, convert('DESC')];
+			 (Name) ->
+			      convert(Name)
+		      end)].
+
+extra_clause2(Exprs, Safe) ->
+    Res = lists:foldl(
+	    fun(Expr, Acc) ->
+		    [extra_clause(Expr, Safe) | Acc]
+	    end, [], Exprs),
+    [lists:reverse(Res)].
+
+insert(Table, Params) ->
+    Names = make_list(Params, fun({Name, _Value}) ->
+					     convert(Name)
+				     end),
+    Values = [$(, make_list(
+		    Params,
+		    fun({_Name, Value}) ->
+			    encode(Value)
+		    end),
+		$)],
+    make_insert_query(Table, Names, Values).
+
+insert(Table, Fields, Records) ->
+    Names = make_list(Fields, fun convert/1),
+    Values =
+	make_list(
+	  Records,
+	  fun(Record) ->
+		  Record1 = if is_tuple(Record) ->
+				    tuple_to_list(Record);
+			       true -> Record
+			    end,
+		  [$(, make_list(Record1, fun encode/1), $)]
+	  end),    
+    make_insert_query(Table, Names, Values).
+
+make_insert_query(Table, Names, Values) ->
+    [<<"INSERT INTO ">>, convert(Table),
+     $(, Names, <<") VALUES ">>, Values].
+
+update(Table, Params, Safe) ->
+    update(Table, Params, undefined, Safe).
+
+update(Table, Params, WhereExpr, Safe) ->
+    S1 = [<<"UPDATE ">>, convert(Table), <<" SET ">>],
+    S2 = make_list(Params,
+			  fun({Field, Val}) ->
+				  [convert(Field), $=, encode(Val)]
+			  end),
+    
+
+    S3 = case where(WhereExpr, Safe) of
+	     undefined ->
+		 [S1, S2];
+	     WhereClause ->
+		 [S1, S2, WhereClause]
+	 end,
+    S3.
+
+delete(Table, Safe) ->
+    delete(Table, undefined, Safe).
+
+delete(Table, WhereExpr, Safe) ->
+    S1 = [<<"DELETE FROM ">>, convert(Table)],
+    case where(WhereExpr, Safe) of
+	undefined ->
+	    S1;
+	WhereClause ->
+	    [S1, WhereClause]
+    end.
+    
+
+convert(Val) when is_atom(Val)->
+    {_Stuff, Bin} = split_binary(term_to_binary(Val), 4),
+    Bin.
+
+make_list(Vals, ConvertFun) when is_list(Vals) ->
+    {Res, _} =
+        lists:foldl(
+          fun(Val, {Acc, false}) ->
+                  {[ConvertFun(Val) | Acc], true};
+	     (Val, {Acc, true}) ->
+                  {[ConvertFun(Val) , $, | Acc], true}
+          end, {[], false}, Vals),
+    lists:reverse(Res);
+make_list(Val, ConvertFun) ->
+    ConvertFun(Val).
+
+expr({Not, Expr}, Safe) when Not == 'not'; Not == '!' ->
+    [<<"NOT ">>, expr(Expr, Safe)];
+expr({parens, Expr}, Safe) ->
+    [$(, expr(Expr, Safe), $)];
+expr({Table, Field}, _Safe) when is_atom(Table), is_atom(Field) ->
+    [convert(Table), $., convert(Field)];
+expr({Expr1, as, Alias}, Safe) when is_atom(Alias) ->
+    [expr2(Expr1, Safe), <<" AS ">>, convert(Alias)];
+expr({call, FuncName, []}, _Safe) ->
+    [convert(FuncName), <<"()">>];
+expr({call, FuncName, Param}, Safe) ->
+    [convert(FuncName), $(, expr2(Param, Safe), $)];
+expr({Val, Op, {select, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {select, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {select, _, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {select, _, _, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {select, _, _, _, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {select, _, _, _, _, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {_, union, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {_, union, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, {_, union, _, _, _} = Subquery}, Safe) ->
+    subquery(Val, Op, Subquery, Safe);
+expr({Val, Op, Values}, Safe) when (Op == in orelse
+			      Op == any orelse
+			      Op == some) andalso
+			     is_list(Values) ->
+    [expr2(Val, Safe), subquery_op(Op), make_list(Values, fun encode/1), $)];
+expr({Expr1, Op, Expr2}, Safe) ->
+    [$(, expr2(Expr1, Safe), 32, op(Op), 32, expr(Expr2, Safe), $)];
+expr({list, Vals}, _Safe) ->
+    [$(, make_list(Vals, fun encode/1), $)];
+expr({Op, Exprs}, Safe) when is_list(Exprs) ->
+    lists:foldl(
+      fun(Expr, []) ->
+	      expr(Expr, Safe);
+	 (Expr, Acc) ->
+	      [expr(Expr, Safe), 32, op(Op), 32, Acc]
+      end, [], lists:reverse(Exprs));
+expr('?', _Safe) -> $?;
+expr(Val, _Safe) when is_atom(Val) -> convert(Val);
+expr(Val, _Safe) -> encode(Val).
+
+op(Op) -> convert(op1(Op)).
+op1('and') -> 'AND';
+op1('or') -> 'OR';
+op1(like) -> 'LIKE';
+op1(Op) -> Op.
+
+
+subquery(Val, Op, Subquery, Safe) ->
+    [expr2(Val, Safe), subquery_op(Op), sql2(Subquery, Safe), $)].
+
+subquery_op(in) -> <<" IN (">>;
+subquery_op(any) -> <<" ANY (">>;
+subquery_op(some) -> <<" SOME (">>.
+
+expr2(Expr, _Safe) when is_atom(Expr) -> convert(Expr);
+expr2(Expr, Safe) -> expr(Expr, Safe).
+    
+
 quote(String) when is_list(String) ->
     [39 | lists:reverse([39 | quote(String, [])])];	%% 39 is $'
 quote(Bin) when is_binary(Bin) ->
@@ -401,3 +471,5 @@ quote([26 | Rest], Acc) ->
     quote(Rest, [$Z, $\\ | Acc]);
 quote([C | Rest], Acc) ->
     quote(Rest, [C | Acc]).
+
+
