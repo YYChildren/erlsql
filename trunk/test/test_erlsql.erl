@@ -162,7 +162,16 @@ test() ->
 	  "SELECT * FROM foo WHERE (a = b) AND (c = d) AND (e = f)"],
 	 
 	 [{select,{parens, {'+', [1,2,3,4]}}},
-	  "SELECT (1 + 2 + 3 + 4)"]
+	  "SELECT (1 + 2 + 3 + 4)"],
+	 
+	 [{select, {"foo", '+', undefined}},
+	  "SELECT 'foo'"],
+
+	 [{select, {undefined, 'and', "bar"}},
+	  "SELECT 'bar'"],
+	 
+	 [{select, '*', {from, x}, {where, {undefined, 'or', undefined}}},
+	  "SELECT * FROM x"]
 	],
 	     
     lists:foreach(
