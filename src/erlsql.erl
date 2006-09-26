@@ -259,7 +259,12 @@ where(Expr, false) when is_binary(Expr) ->
 where(Exprs, false) when is_list(Exprs)->
     where(list_to_binary(Exprs), false);
 where(Expr, Safe) when is_tuple(Expr) ->
-    [<<" WHERE ">>, expr(Expr, Safe)].
+    case expr(Expr, Safe) of
+	undefined ->
+	    undefined;
+	Other ->
+	    [<<" WHERE ">>, Other]
+    end.
 
 extra_clause(undefined, _Safe) -> undefined;
 extra_clause(Expr, false) when is_binary(Expr) -> [32, Expr];
@@ -410,6 +415,9 @@ expr({Val, Op, {_, union, _, _} = Subquery}, Safe) ->
     subquery(Val, Op, Subquery, Safe);
 expr({Val, Op, {_, union, _, _, _} = Subquery}, Safe) ->
     subquery(Val, Op, Subquery, Safe);
+expr({undefined, _Op, undefined}, _Safe) -> undefined;
+expr({undefined, _Op, Expr}, Safe) -> expr(Expr, Safe);
+expr({Expr, _Op, undefined}, Safe) -> expr(Expr, Safe);
 expr({Val, Op, Values}, Safe) when (Op == in orelse
 			      Op == any orelse
 			      Op == some) andalso
@@ -427,6 +435,7 @@ expr({Op, Exprs}, Safe) when is_list(Exprs) ->
 	      [expr(Expr, Safe), 32, op(Op), 32, Acc]
       end, [], lists:reverse(Exprs));
 expr('?', _Safe) -> $?;
+expr(null, _Safe) -> <<"NULL">>;
 expr(Val, _Safe) when is_atom(Val) -> convert(Val);
 expr(Val, _Safe) -> encode(Val).
 
