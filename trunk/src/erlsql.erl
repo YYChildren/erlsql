@@ -150,6 +150,8 @@ sql2({select, Fields, {from, Tables}, {where, WhereExpr}}, Safe) ->
     select(undefined, Fields, Tables, WhereExpr, undefined, Safe);
 sql2({select, Fields, {from, Tables}, {where, WhereExpr}, Extras}, Safe) ->
     select(undefined, Fields, Tables, WhereExpr, Extras, Safe);
+sql2({select, Fields, {from, Tables}, WhereExpr, Extras}, Safe) ->
+    select(undefined, Fields, Tables, WhereExpr, Extras, Safe);
 sql2({select, Fields, {from, Tables}, Extras}, Safe) ->
     select(undefined, Fields, Tables, undefined, Extras, Safe);
 sql2({select, Tables, {where, WhereExpr}}, Safe) ->
