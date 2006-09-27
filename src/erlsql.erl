@@ -244,8 +244,8 @@ select(Modifier, Fields, Tables, WhereExpr, Extras, Safe) ->
 	undefined -> S5;
 	Expr -> [S5, Expr]
     end.
-					    
-where(undefined, _Safe) -> undefined;
+
+where(undefined, _) -> [];
 where(Expr, false) when is_binary(Expr) ->
     Res = case Expr of	
 	      <<"WHERE ", _Rest/binary>> = Expr1 ->
@@ -261,7 +261,7 @@ where(Exprs, false) when is_list(Exprs)->
 where(Expr, Safe) when is_tuple(Expr) ->
     case expr(Expr, Safe) of
 	undefined ->
-	    undefined;
+	    [];
 	Other ->
 	    [<<" WHERE ">>, Other]
     end.
@@ -346,15 +346,7 @@ update(Table, Params, WhereExpr, Safe) ->
 			  fun({Field, Val}) ->
 				  [convert(Field), $=, encode(Val)]
 			  end),
-    
-
-    S3 = case where(WhereExpr, Safe) of
-	     undefined ->
-		 [S1, S2];
-	     WhereClause ->
-		 [S1, S2, WhereClause]
-	 end,
-    S3.
+    [S1, S2, where(WhereExpr, Safe)].
 
 delete(Table, Safe) ->
     delete(Table, undefined, Safe).
@@ -367,7 +359,6 @@ delete(Table, WhereExpr, Safe) ->
 	WhereClause ->
 	    [S1, WhereClause]
     end.
-    
 
 convert(Val) when is_atom(Val)->
     {_Stuff, Bin} = split_binary(term_to_binary(Val), 4),
@@ -415,9 +406,6 @@ expr({Val, Op, {_, union, _, _} = Subquery}, Safe) ->
     subquery(Val, Op, Subquery, Safe);
 expr({Val, Op, {_, union, _, _, _} = Subquery}, Safe) ->
     subquery(Val, Op, Subquery, Safe);
-expr({undefined, _Op, undefined}, _Safe) -> undefined;
-expr({undefined, _Op, Expr}, Safe) -> expr(Expr, Safe);
-expr({Expr, _Op, undefined}, Safe) -> expr(Expr, Safe);
 expr({Val, Op, Values}, Safe) when (Op == in orelse
 			      Op == any orelse
 			      Op == some) andalso
