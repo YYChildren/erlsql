@@ -23,7 +23,7 @@ assert(Q, Str, false) ->
     Res = Str,
     
     case catch erlsql:sql(Q) of
-	{'EXIT', _} ->
+	{error, {unsafe_expression, _}} ->
 	    ok;
 	Other ->
 	    throw({"statement passed illegally!!!", {Q, Other}})
@@ -230,7 +230,19 @@ test() ->
 	    union,
 	    {select, '*', {from, bar}},
 	    {where, "a=b"}},
-	   "(SELECT * FROM foo) UNION (SELECT * FROM bar) WHERE a=b"]
+	   "(SELECT * FROM foo) UNION (SELECT * FROM bar) WHERE a=b"],
+	 
+	 [{select, {a, 'or', "foo"}},
+	  "SELECT (a OR 'foo')"],
+
+	 [{select, {"bar", 'or', b}},
+	  "SELECT ('bar' OR b)"],
+
+	 [{select, {'not', "foo=bar"}},
+	  "SELECT NOT 'foo=bar'"],
+
+	 [{select, {'!', "foo=bar"}},
+	  "SELECT NOT 'foo=bar'"]
 	 ],
 
     lists:foreach(
