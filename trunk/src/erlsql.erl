@@ -304,7 +304,9 @@ extra_clause({order_by, ColNames}, _Safe) ->
 
 extra_clause2(Exprs, Safe) ->
     Res = lists:foldl(
-	    fun(Expr, Acc) ->
+	    fun(undefined, Acc) ->
+		    Acc;
+	       (Expr, Acc) ->
 		    [extra_clause(Expr, Safe) | Acc]
 	    end, [], Exprs),
     [lists:reverse(Res)].
