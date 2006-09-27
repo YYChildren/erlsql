@@ -77,8 +77,8 @@ sql(Esql, false) ->
 
 %% @doc Generate an iolist (a tree of strings and/or binaries)
 %%  for a literal SQL statement that corresponds to the ESQL
-%%  structure. If the structure is invalid, this function would
-%%  crash.
+%%  structure. If the structure is invalid, this function 
+%%  throws an exception.
 %%  This function allows writing literal WHERE, LIMIT
 %%  and other trailing clauses, such as {where, "a=" ++ Val},
 %%  or "WHERE a=" ++ Str ++ " LIMIT 5".
@@ -87,6 +87,7 @@ sql(Esql, false) ->
 %%  quote all your strings using the encode/1 function.
 %%
 %% @spec unsafe_sql(Esql::term()) -> iolist()
+%% @throws {error, {unsafe_expression, Expr}}
 unsafe_sql(Esql) ->
     sql2(Esql, false).
 
@@ -94,6 +95,7 @@ unsafe_sql(Esql) ->
 %%  indicating if the return value should be a binary or an iolist.
 %%
 %% @spec unsafe_sql(Esql::term(), AsBinary::bool()) -> binary() | iolist()
+%% @throws {error, {unsafe_expression, Expr}}
 unsafe_sql(Esql, true) ->
     iolist_to_binary(unsafe_sql(Esql));
 unsafe_sql(Esql, false) ->
@@ -248,6 +250,8 @@ select(Modifier, Fields, Tables, WhereExpr, Extras, Safe) ->
     end.
 
 where(undefined, _) -> [];
+where(Expr, true) when is_list(Expr); is_binary(Expr) ->
+    throw({error, {unsafe_expression, Expr}});
 where(Expr, false) when is_binary(Expr) ->
     Res = case Expr of	
 	      <<"WHERE ", _Rest/binary>> = Expr1 ->
@@ -269,14 +273,20 @@ where(Expr, Safe) when is_tuple(Expr) ->
     end.
 
 extra_clause(undefined, _Safe) -> undefined;
+extra_clause(Expr, true) when is_binary(Expr) ->
+    throw({error, {unsafe_expression, Expr}});
 extra_clause(Expr, false) when is_binary(Expr) -> [32, Expr];
 extra_clause([Expr], false) when is_binary(Expr) -> [32, Expr];
-extra_clause(Exprs, false) when is_list(Exprs) ->
+extra_clause(Exprs, Safe) when is_list(Exprs) ->
     case is_tuple(hd(Exprs)) of 
-	false ->
-	    [32, list_to_binary(Exprs)];
 	true ->
-	    extra_clause2(Exprs, false)
+	    extra_clause2(Exprs, false);
+	false ->
+	    if not Safe ->
+		    [32, list_to_binary(Exprs)];
+	       true ->
+		    throw({error, {unsafe_expression, Exprs}})
+	    end
     end;
 extra_clause(Exprs, true) when is_list(Exprs) ->
     extra_clause2(Exprs, true);
@@ -380,8 +390,14 @@ make_list(Vals, ConvertFun) when is_list(Vals) ->
 make_list(Val, ConvertFun) ->
     ConvertFun(Val).
 
-expr({Not, Expr}, Safe) when Not == 'not'; Not == '!' ->
-    [<<"NOT ">>, expr(Expr, Safe)];
+expr({Not, Expr}, Safe) when (Not == 'not' orelse Not == '!') ->
+    if (Safe == false orelse
+	(not is_list(Expr) andalso 
+	 not is_binary(Expr))) ->
+	    [<<"NOT ">>, expr(Expr, Safe)];
+       true ->
+	    throw({error, {unsafe_expression, {Not, Expr}}})
+    end;
 expr({parens, Expr}, Safe) ->
     [$(, expr(Expr, Safe), $)];
 expr({Table, Field}, _Safe) when is_atom(Table), is_atom(Field) ->
@@ -415,8 +431,18 @@ expr({Val, Op, Values}, Safe) when (Op == in orelse
 			      Op == some) andalso
 			     is_list(Values) ->
     [expr2(Val, Safe), subquery_op(Op), make_list(Values, fun encode/1), $)];
-expr({Expr1, Op, Expr2}, Safe) ->
-    [$(, expr2(Expr1, Safe), 32, op(Op), 32, expr(Expr2, Safe), $)];
+expr({Expr1, Op, Expr2}, Safe)  ->
+    if ((Op == 'and' orelse Op == 'or')
+	andalso Safe == true
+	andalso (
+	  is_list(Expr1) orelse
+	  is_list(Expr2) orelse
+	  is_binary(Expr1) orelse
+	  is_binary(Expr2))) ->
+	    throw({error, {unsafe_expression, {Expr1, Op, Expr2}}});
+       true->    
+	    [$(, expr2(Expr1, Safe), 32, op(Op), 32, expr(Expr2, Safe), $)]
+    end;
 expr({list, Vals}, _Safe) ->
     [$(, make_list(Vals, fun encode/1), $)];
 expr({Op, Exprs}, Safe) when is_list(Exprs) ->
