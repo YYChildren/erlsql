@@ -391,13 +391,7 @@ make_list(Val, ConvertFun) ->
     ConvertFun(Val).
 
 expr({Not, Expr}, Safe) when (Not == 'not' orelse Not == '!') ->
-    if (Safe == false orelse
-	(not is_list(Expr) andalso 
-	 not is_binary(Expr))) ->
-	    [<<"NOT ">>, expr(Expr, Safe)];
-       true ->
-	    throw({error, {unsafe_expression, {Not, Expr}}})
-    end;
+    [<<"NOT ">>, check_expr(Expr, Safe)];
 expr({parens, Expr}, Safe) ->
     [$(, expr(Expr, Safe), $)];
 expr({Table, Field}, _Safe) when is_atom(Table), is_atom(Field) ->
@@ -432,17 +426,14 @@ expr({Val, Op, Values}, Safe) when (Op == in orelse
 			     is_list(Values) ->
     [expr2(Val, Safe), subquery_op(Op), make_list(Values, fun encode/1), $)];
 expr({Expr1, Op, Expr2}, Safe)  ->
-    if ((Op == 'and' orelse Op == 'or')
-	andalso Safe == true
-	andalso (
-	  is_list(Expr1) orelse
-	  is_list(Expr2) orelse
-	  is_binary(Expr1) orelse
-	  is_binary(Expr2))) ->
-	    throw({error, {unsafe_expression, {Expr1, Op, Expr2}}});
-       true->    
-	    [$(, expr2(Expr1, Safe), 32, op(Op), 32, expr(Expr2, Safe), $)]
-    end;
+    {B1, B2} = 
+	if (Op == 'and' orelse Op == 'or') ->
+		{check_expr(Expr1, Safe), check_expr(Expr2, Safe)};
+	   true ->
+		{expr2(Expr1, Safe), expr2(Expr2, Safe)}
+	end,
+    [$(, B1, 32, op(Op), 32, B2, $)];
+
 expr({list, Vals}, _Safe) ->
     [$(, make_list(Vals, fun encode/1), $)];
 expr({Op, Exprs}, Safe) when is_list(Exprs) ->
@@ -456,6 +447,14 @@ expr('?', _Safe) -> $?;
 expr(null, _Safe) -> <<"NULL">>;
 expr(Val, _Safe) when is_atom(Val) -> convert(Val);
 expr(Val, _Safe) -> encode(Val).
+
+check_expr(Expr, Safe) when is_list(Expr); is_binary(Expr) ->
+    if Safe ->
+	    throw({error, {unsafe_expression, Expr}});
+       true ->
+	    iolist_to_binary(Expr)
+    end;
+check_expr(Expr, Safe) -> expr(Expr, Safe).
 
 op(Op) -> convert(op1(Op)).
 op1('and') -> 'AND';
