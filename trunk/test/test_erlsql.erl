@@ -233,19 +233,19 @@ test() ->
 	   "(SELECT * FROM foo) UNION (SELECT * FROM bar) WHERE a=b"],
 	 
 	 [{select, {a, 'or', "foo"}},
-	  "SELECT (a OR foo)"],
+	  "SELECT (a OR (foo))"],
 
 	 [{select, {"bar", 'or', b}},
-	  "SELECT (bar OR b)"],
+	  "SELECT ((bar) OR b)"],
 
 	 [{select, {"foo", 'and', <<"bar">>}},
-	  "SELECT (foo AND bar)"],
+	  "SELECT ((foo) AND (bar))"],
 
 	 [{select, {'not', "foo=bar"}},
-	  "SELECT NOT foo=bar"],
+	  "SELECT NOT (foo=bar)"],
 
 	 [{select, {'!', "foo=bar"}},
-	  "SELECT NOT foo=bar"]
+	  "SELECT NOT (foo=bar)"]
 	 ],
 
     lists:foreach(
