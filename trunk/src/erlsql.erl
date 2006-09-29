@@ -452,7 +452,7 @@ check_expr(Expr, Safe) when is_list(Expr); is_binary(Expr) ->
     if Safe ->
 	    throw({error, {unsafe_expression, Expr}});
        true ->
-	    iolist_to_binary(Expr)
+	    iolist_to_binary([$(, Expr, $)])
     end;
 check_expr(Expr, Safe) -> expr(Expr, Safe).
 
