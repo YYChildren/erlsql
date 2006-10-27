@@ -131,18 +131,26 @@ encode(Val, false) when is_float(Val) ->
 encode({datetime, Val}, AsBinary) ->
     encode(Val, AsBinary);
 encode({{Year, Month, Day}, {Hour, Minute, Second}}, false) ->
-    Res = io_lib:format("'~B~B~B~B~B~B'", [Year, Month, Day, Hour,
-					  Minute, Second]),
+    Res = two_digits([Year, Month, Day, Hour, Minute, Second]),
     lists:flatten(Res);
 encode({TimeType, Val}, AsBinary)
   when TimeType == 'date';
        TimeType == 'time' ->
     encode(Val, AsBinary);
 encode({Time1, Time2, Time3}, false) ->
-    Res = io_lib:format("'~B~B~B'", [Time1, Time2, Time3]),
+    Res = two_digits([Time1, Time2, Time3]),
     lists:flatten(Res);
 encode(Val, _AsBinary) ->
     {error, {unrecognized_value, {Val}}}.
+
+two_digits(Nums) when is_list(Nums) ->
+    [two_digits(Num) || Num <- Nums];
+two_digits(Num) ->
+    [Str] = io_lib:format("~b", [Num]),
+    case length(Str) of
+	1 -> [$0 | Str];
+	_ -> Str
+    end.
 
 sql2({select, Tables}, Safe)->
     select(Tables, Safe);
