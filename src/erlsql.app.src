@@ -1,0 +1,15 @@
+{application, erlsql,
+ [{description, "erlsql modified from <https://code.google.com/archive/p/erlyweb/>"},
+  {vsn, "1.0.0"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, []},
+  {licenses, []},
+  {links, []}
+ ]}.
