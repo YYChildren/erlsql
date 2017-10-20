@@ -1,14 +1,10 @@
 erlsql
 =====
 
-An OTP library
+erlsql modified from <https://code.google.com/archive/p/erlyweb/>
 
 Build
 -----
 
     $ rebar3 compile
 
-
-## TODO
-
-1. 添加 insert duplicate 和 insert ignore 的测试用例

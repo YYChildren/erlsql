@@ -1,6 +1,6 @@
 {application, erlsql,
  [{description, "erlsql modified from <https://code.google.com/archive/p/erlyweb/>"},
-  {vsn, "1.0.0"},
+  {vsn, "1.0.1"},
   {registered, []},
   {applications,
    [kernel,
