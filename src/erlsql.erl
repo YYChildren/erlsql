@@ -514,7 +514,9 @@ delete(Table, Using, WhereExpr, Extras, Safe) ->
 
 convert(Val) when is_atom(Val)->
     {_Stuff, Bin} = split_binary(term_to_binary(Val), 4),
-    Bin.
+    Bin;
+convert(Val) when is_binary(Val)->
+    Val.
 
 make_list(Vals, ConvertFun) when is_list(Vals) ->
     {Res, _} =
